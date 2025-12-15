@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <numeric>
 #include <random>
 #include <thread>
 
@@ -21,8 +22,26 @@ void calculate_hits(uintmax_t N, uintmax_t& hits)
         double x = rnd_distr(rnd_gen);
         double y = rnd_distr(rnd_gen);
         if (x * x + y * y <= 1)
-            ++hits;
+            ++hits; // hot-loop
     }
+}
+
+void calculate_hits_with_local_counter(uintmax_t N, uintmax_t& hits)
+{
+    const size_t seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen{seed};
+    std::uniform_real_distribution<double> rnd_distr{0.0, 1.0};
+
+    uintmax_t local_hits{};
+    for (uintmax_t n = 0; n < N; ++n)
+    {
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
+        if (x * x + y * y <= 1)
+            ++local_hits; // hot-loop
+    }
+
+    hits += local_hits;
 }
 
 void single_thread_pi()
@@ -53,8 +72,6 @@ void multi_thread_pi()
     std::vector<uintmax_t> noHits(noThreads);
     const uintmax_t n_per_thread = N / noThreads;
 
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
-
     std::cout << "Pi (multi thread)! Number of threads: " << noThreads << std::endl;
     const auto start = chrono::high_resolution_clock::now();
 
@@ -68,12 +85,7 @@ void multi_thread_pi()
         threads[i].join();
     }
 
-    uint32_t allHits{};
-    for (uint32_t i{0}; i < noThreads; i++)
-    {
-        allHits += noHits[i];
-    }
-
+    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{});
     const double pi = static_cast<double>(allHits) / N * 4;
 
     const auto end = chrono::high_resolution_clock::now();
@@ -83,11 +95,106 @@ void multi_thread_pi()
     cout << "Elapsed (" << noThreads << " threads) = " << elapsed_time << "ms" << endl;
 }
 
+void multi_thread_pi_with_local_counter()
+{
+    const auto noThreads{std::max(std::thread::hardware_concurrency(), 1u)};
+
+    std::vector<std::thread> threads(noThreads);
+    std::vector<uintmax_t> noHits(noThreads);
+    const uintmax_t n_per_thread = N / noThreads;
+
+    std::cout << "Pi (multi thread - local counter)! Number of threads: " << noThreads << std::endl;
+    const auto start = chrono::high_resolution_clock::now();
+
+    for (uint32_t i{0}; i < noThreads; i++)
+    {
+        threads[i] = std::thread(&calculate_hits_with_local_counter, static_cast<uintmax_t>(n_per_thread), std::ref(noHits[i]));
+    }
+
+    for (uint32_t i{0}; i < noThreads; i++)
+    {
+        threads[i].join();
+    }
+
+    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{});
+    const double pi = static_cast<double>(allHits) / N * 4;
+
+    const auto end = chrono::high_resolution_clock::now();
+    const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    cout << "Pi = " << pi << endl;
+    cout << "Elapsed (" << noThreads << " threads - local counter) = " << elapsed_time << "ms" << endl;
+}
+
+struct Hits
+{
+    alignas(std::hardware_destructive_interference_size) uintmax_t value;
+};
+
+void calculate_hits_with_padding(uintmax_t N, Hits& hits)
+{
+    const size_t seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen{seed};
+    std::uniform_real_distribution<double> rnd_distr{0.0, 1.0};
+
+    for (uintmax_t n = 0; n < N; ++n)
+    {
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
+        if (x * x + y * y <= 1)
+            ++(hits.value); // hot-loop
+    }
+}
+
+void multi_thread_pi_with_padding()
+{
+    const auto noThreads{std::max(std::thread::hardware_concurrency(), 1u)};
+
+    std::vector<std::thread> threads(noThreads);
+    std::vector<Hits> noHits(noThreads);
+    const uintmax_t n_per_thread = N / noThreads;
+
+    std::cout << "Pi (multi thread - padding)! Number of threads: " << noThreads << std::endl;
+    const auto start = chrono::high_resolution_clock::now();
+
+    for (uint32_t i{0}; i < noThreads; i++)
+    {
+        threads[i] = std::thread(&calculate_hits_with_padding, static_cast<uintmax_t>(n_per_thread), std::ref(noHits[i]));
+    }
+
+    for (uint32_t i{0}; i < noThreads; i++)
+    {
+        threads[i].join();
+    }
+
+    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{}, [](uintmax_t red, Hits arg) { return red + arg.value; });
+    const double pi = static_cast<double>(allHits) / N * 4;
+
+    const auto end = chrono::high_resolution_clock::now();
+    const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    cout << "Pi = " << pi << endl;
+    cout << "Elapsed (" << noThreads << " threads - padding) = " << elapsed_time << "ms" << endl;
+}
+
 int main()
 {
     const uintmax_t N = 100'000'000;
 
     single_thread_pi();
 
+    std::cout << "\n----------\n"
+              << std::endl;
+
     multi_thread_pi();
+
+    std::cout << "\n----------\n"
+              << std::endl;
+
+    multi_thread_pi_with_local_counter();
+
+    std::cout << "\n----------\n"
+              << std::endl;
+
+    multi_thread_pi_with_padding();
 }
