@@ -66,64 +66,64 @@ void single_thread_pi()
 
 void multi_thread_pi()
 {
-    const auto noThreads{std::max(std::thread::hardware_concurrency(), 1u)};
+    const auto threads_count{std::max(std::thread::hardware_concurrency(), 1u)};
 
-    std::vector<std::thread> threads(noThreads);
-    std::vector<uintmax_t> noHits(noThreads);
-    const uintmax_t n_per_thread = N / noThreads;
+    std::vector<std::thread> threads(threads_count);
+    std::vector<uintmax_t> hits(threads_count);
+    const uintmax_t n_per_thread = N / threads_count;
 
-    std::cout << "Pi (multi thread)! Number of threads: " << noThreads << std::endl;
+    std::cout << "Pi (multi thread)! Number of threads: " << threads_count << std::endl;
     const auto start = chrono::high_resolution_clock::now();
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
-        threads[i] = std::thread(&calculate_hits, static_cast<uintmax_t>(n_per_thread), std::ref(noHits[i]));
+        threads[i] = std::thread(&calculate_hits, static_cast<uintmax_t>(n_per_thread), std::ref(hits[i]));
     }
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
         threads[i].join();
     }
 
-    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{});
-    const double pi = static_cast<double>(allHits) / N * 4;
+    uintmax_t total_hits = std::accumulate(hits.begin(), hits.end(), uintmax_t{});
+    const double pi = static_cast<double>(total_hits) / N * 4;
 
     const auto end = chrono::high_resolution_clock::now();
     const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
     cout << "Pi = " << pi << endl;
-    cout << "Elapsed (" << noThreads << " threads) = " << elapsed_time << "ms" << endl;
+    cout << "Elapsed (" << threads_count << " threads) = " << elapsed_time << "ms" << endl;
 }
 
 void multi_thread_pi_with_local_counter()
 {
-    const auto noThreads{std::max(std::thread::hardware_concurrency(), 1u)};
+    const auto threads_count{std::max(std::thread::hardware_concurrency(), 1u)};
 
-    std::vector<std::thread> threads(noThreads);
-    std::vector<uintmax_t> noHits(noThreads);
-    const uintmax_t n_per_thread = N / noThreads;
+    std::vector<std::thread> threads(threads_count);
+    std::vector<uintmax_t> hits(threads_count);
+    const uintmax_t n_per_thread = N / threads_count;
 
-    std::cout << "Pi (multi thread - local counter)! Number of threads: " << noThreads << std::endl;
+    std::cout << "Pi (multi thread - local counter)! Number of threads: " << threads_count << std::endl;
     const auto start = chrono::high_resolution_clock::now();
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
-        threads[i] = std::thread(&calculate_hits_with_local_counter, static_cast<uintmax_t>(n_per_thread), std::ref(noHits[i]));
+        threads[i] = std::thread(&calculate_hits_with_local_counter, static_cast<uintmax_t>(n_per_thread), std::ref(hits[i]));
     }
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
         threads[i].join();
     }
 
-    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{});
-    const double pi = static_cast<double>(allHits) / N * 4;
+    uintmax_t total_hits = std::accumulate(hits.begin(), hits.end(), uintmax_t{});
+    const double pi = static_cast<double>(total_hits) / N * 4;
 
     const auto end = chrono::high_resolution_clock::now();
     const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
     cout << "Pi = " << pi << endl;
-    cout << "Elapsed (" << noThreads << " threads - local counter) = " << elapsed_time << "ms" << endl;
+    cout << "Elapsed (" << threads_count << " threads - local counter) = " << elapsed_time << "ms" << endl;
 }
 
 struct Hits
@@ -148,33 +148,33 @@ void calculate_hits_with_padding(uintmax_t N, Hits& hits)
 
 void multi_thread_pi_with_padding()
 {
-    const auto noThreads{std::max(std::thread::hardware_concurrency(), 1u)};
+    const auto threads_count{std::max(std::thread::hardware_concurrency(), 1u)};
 
-    std::vector<std::thread> threads(noThreads);
-    std::vector<Hits> noHits(noThreads);
-    const uintmax_t n_per_thread = N / noThreads;
+    std::vector<std::thread> threads(threads_count);
+    std::vector<Hits> hits(threads_count);
+    const uintmax_t n_per_thread = N / threads_count;
 
-    std::cout << "Pi (multi thread - padding)! Number of threads: " << noThreads << std::endl;
+    std::cout << "Pi (multi thread - padding)! Number of threads: " << threads_count << std::endl;
     const auto start = chrono::high_resolution_clock::now();
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
-        threads[i] = std::thread(&calculate_hits_with_padding, static_cast<uintmax_t>(n_per_thread), std::ref(noHits[i]));
+        threads[i] = std::thread(&calculate_hits_with_padding, static_cast<uintmax_t>(n_per_thread), std::ref(hits[i]));
     }
 
-    for (uint32_t i{0}; i < noThreads; i++)
+    for (uint32_t i{0}; i < threads_count; i++)
     {
         threads[i].join();
     }
 
-    uintmax_t allHits = std::accumulate(noHits.begin(), noHits.end(), uintmax_t{}, [](uintmax_t red, Hits arg) { return red + arg.value; });
-    const double pi = static_cast<double>(allHits) / N * 4;
+    uintmax_t total_hits = std::accumulate(hits.begin(), hits.end(), uintmax_t{}, [](uintmax_t red, Hits arg) { return red + arg.value; });
+    const double pi = static_cast<double>(total_hits) / N * 4;
 
     const auto end = chrono::high_resolution_clock::now();
     const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
 
     cout << "Pi = " << pi << endl;
-    cout << "Elapsed (" << noThreads << " threads - padding) = " << elapsed_time << "ms" << endl;
+    cout << "Elapsed (" << threads_count << " threads - padding) = " << elapsed_time << "ms" << endl;
 }
 
 int main()
