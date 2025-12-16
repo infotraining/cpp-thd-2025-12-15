@@ -1,49 +1,124 @@
 #include <iostream>
 #include <thread>
 
-class BankAccount
+namespace ver_1
 {
-    const int id_;
-    double balance_;
-
-public:
-    BankAccount(int id, double balance)
-        : id_(id)
-        , balance_(balance)
+    class BankAccount
     {
-    }
+        const int id_;
+        double balance_;
+        mutable std::mutex mtx_;
 
-    void print() const
-    {
-        std::cout << "Bank Account #" << id_ << "; Balance = " << balance_ << std::endl;
-    }
+    public:
+        BankAccount(int id, double balance)
+            : id_(id)
+            , balance_(balance)
+        {
+        }
 
-    void transfer(BankAccount& to, double amount)
-    {
-        balance_ -= amount;
-        to.balance_ += amount;
-    }
+        void print() const
+        {
+            std::cout << "Bank Account #" << id_ << "; Balance = " << balance() << std::endl;
+        }
 
-    void withdraw(double amount)
-    {
-        balance_ -= amount;
-    }
+        // void transfer(BankAccount& to, double amount)
+        // {
+        //     balance_ -= amount;
+        //     to.balance_ += amount;
+        // }
 
-    void deposit(double amount)
-    {
-        balance_ += amount;
-    }
+        void withdraw(double amount)
+        {
+            std::lock_guard lock(mtx_);
+            balance_ -= amount;
+        }
 
-    int id() const
-    {
-        return id_;
-    }
+        void deposit(double amount)
+        {
+            std::lock_guard lock(mtx_);
+            balance_ += amount;
+        }
 
-    double balance() const
+        int id() const
+        {
+            return id_;
+        }
+
+        double balance() const
+        {
+            std::lock_guard lk{mtx_};
+            return balance_;
+        }
+    };
+} // namespace ver_1
+
+inline namespace ver_2
+{
+    template <typename T>
+    struct SynchronizedValue
     {
-        return balance_;
-    }
-};
+        T value;
+        std::mutex mtx_value;
+
+        [[nodiscard("Must be assigned to local variable to start critical section")]] std::lock_guard<std::mutex> lock()
+        {
+            return std::lock_guard{mtx_value};
+        }
+    };
+
+    class BankAccount
+    {
+        const int id_;
+        mutable SynchronizedValue<double> balance_;
+
+    public:
+        BankAccount(int id, double balance)
+            : id_(id)
+            , balance_(balance)
+        {
+        }
+
+        void print() const
+        {
+            double current_balance{};
+            {
+                auto lk = balance_.lock();
+                current_balance = balance_.value;
+            }
+
+            std::cout << "Bank Account #" << id_ << "; Balance = " << current_balance << std::endl;
+        }
+
+        // void transfer(BankAccount& to, double amount)
+        // {
+        //     balance_ -= amount;
+        //     to.balance_ += amount;
+        // }
+
+        void withdraw(double amount)
+        {
+            auto lk = balance_.lock();
+            balance_.value -= amount;
+        }
+
+        void deposit(double amount)
+        {
+            auto lk = balance_.lock();
+            balance_.value += amount;
+        }
+
+        int id() const
+        {
+            return id_;
+        }
+
+        double balance() const
+        {
+            auto lk = balance_.lock();
+            return balance_.value;
+        }
+    };
+} // namespace ver_2
 
 void make_withdraws(BankAccount& ba, int no_of_operations)
 {
@@ -70,6 +145,9 @@ int main()
 
     std::thread thd1(&make_withdraws, std::ref(ba1), NO_OF_ITERS);
     std::thread thd2(&make_deposits, std::ref(ba1), NO_OF_ITERS);
+
+    std::cout << "Balance: " << ba1.balance() << "\n";
+    ba1.print();
 
     thd1.join();
     thd2.join();
