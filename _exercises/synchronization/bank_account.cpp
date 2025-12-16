@@ -1,7 +1,8 @@
 #include <iostream>
+#include <mutex>
 #include <thread>
 
-namespace ver_1
+inline namespace ver_1
 {
     class BankAccount
     {
@@ -21,21 +22,53 @@ namespace ver_1
             std::cout << "Bank Account #" << id_ << "; Balance = " << balance() << std::endl;
         }
 
-        // void transfer(BankAccount& to, double amount)
-        // {
-        //     balance_ -= amount;
-        //     to.balance_ += amount;
-        // }
+        void transfer(BankAccount& to, double amount)
+        {
+            // if (this->id_ <  to.id_)
+            // {
+            //     std::lock_guard lk_from{mtx_};
+            //     std::lock_guard lk_to{to.mtx_};
+
+            //     balance_ -= amount;
+            //     to.balance_ += amount;
+            // }
+            // else
+            // {
+            //     std::lock_guard lk_to{to.mtx_};
+            //     std::lock_guard lk_from{mtx_};
+
+            //     balance_ -= amount;
+            //     to.balance_ += amount;
+            // }
+
+#if __cplusplus < 201703L
+            std::unique_lock<std::mutex> lk_from{mtx_, std::defer_lock};
+            std::unique_lock<std::mutex> lk_to{to.mtx_, std::defer_lock};
+            std::lock(lk_from, lk_to); // protection from deadlock - begin of critical section
+            balance_ -= amount;
+            to.balance_ += amount;
+#else
+            std::scoped_lock lk{mtx_, to.mtx_};
+            balance_ -= amount;
+            to.balance_ += amount;
+#endif
+        } // end of critical section
 
         void withdraw(double amount)
         {
-            std::lock_guard lock(mtx_);
+            std::unique_lock lk{mtx_, std::defer_lock};
+            do_lock();
             balance_ -= amount;
+        }
+
+        void do_lock()
+        {
+            mtx_.lock();
         }
 
         void deposit(double amount)
         {
-            std::lock_guard lock(mtx_);
+            std::scoped_lock lock(mtx_);
             balance_ += amount;
         }
 
@@ -52,7 +85,7 @@ namespace ver_1
     };
 } // namespace ver_1
 
-inline namespace ver_2
+namespace ver_2
 {
     template <typename T>
     struct SynchronizedValue
@@ -132,6 +165,12 @@ void make_deposits(BankAccount& ba, int no_of_operations)
         ba.deposit(1.0);
 }
 
+void make_transfers(BankAccount& from, BankAccount& to, int no_of_operations)
+{
+    for (int i = 0; i < no_of_operations; ++i)
+        from.transfer(to, 1.0);
+}
+
 int main()
 {
     const int NO_OF_ITERS = 10'000'000;
@@ -145,12 +184,16 @@ int main()
 
     std::thread thd1(&make_withdraws, std::ref(ba1), NO_OF_ITERS);
     std::thread thd2(&make_deposits, std::ref(ba1), NO_OF_ITERS);
+    std::thread thd3(&make_transfers, std::ref(ba1), std::ref(ba2), NO_OF_ITERS / 10); // ba1 -> ba2 : { ba1.lock(); | ba2.lock(); do_transfer(); }
+    std::thread thd4(&make_transfers, std::ref(ba2), std::ref(ba1), NO_OF_ITERS / 10); // ba2 -> ba1 : { ba2.lock(); | ba1.lock(); do_transfer();}
 
     std::cout << "Balance: " << ba1.balance() << "\n";
     ba1.print();
 
     thd1.join();
     thd2.join();
+    thd3.join();
+    thd4.join();
 
     std::cout << "After all threads are done: ";
     ba1.print();
