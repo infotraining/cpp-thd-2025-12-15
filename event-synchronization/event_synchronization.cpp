@@ -8,30 +8,43 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <syncstream>
 
 using namespace std::literals;
+
+auto sync_cout()
+{
+    return std::osyncstream(std::cout);
+}
+
+static_assert(std::atomic<bool>::is_always_lock_free);
 
 class Data
 {
     std::vector<int> data_;
-    // TODO
+    std::atomic<bool> is_data_ready_{};
 
 public:
     void read()
     {
-        std::cout << "Start reading..." << std::endl;
+        sync_cout() << "Start reading..." << std::endl;
         data_.resize(100);
 
         std::random_device rnd;
-        std::generate(begin(data_), end(data_), [&rnd] { return rnd() % 1000; });
         std::this_thread::sleep_for(2s);
-        std::cout << "End reading..." << std::endl;
+        std::generate(begin(data_), end(data_), [&rnd] { return rnd() % 1000; });
+        sync_cout() << "End reading..." << std::endl;
+        // is_data_ready_ = true;
+        is_data_ready_.store(true, std::memory_order_release);
     }
 
     void process(int id)
     {
+        sync_cout() << "Start processing..." << std::endl;
+        //while (!is_data_ready_) {}
+        while (!is_data_ready_.load(std::memory_order_acquire)) {}
         long sum = std::accumulate(begin(data_), end(data_), 0L);
-        std::cout << "Id: " << id << "; Sum: " << sum << std::endl;
+        sync_cout() << "Id: " << id << "; Sum: " << sum << std::endl;
     }
 };
 
@@ -45,5 +58,5 @@ int main()
         std::jthread thd_consumer_2{[&data] { data.process(2); }};
     }
 
-    std::cout << "END of main..." << std::endl;
+    sync_cout() << "END of main..." << std::endl;
 }

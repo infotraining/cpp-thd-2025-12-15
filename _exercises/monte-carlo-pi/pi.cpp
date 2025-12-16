@@ -80,7 +80,8 @@ void calculate_hits_atomic(uintmax_t N, std::atomic<uintmax_t>& hits)
             ++local_counter;
     }
 
-    hits += local_counter;
+    // hits += local_counter; 
+    hits.fetch_add(local_counter, std::memory_order_relaxed);
 }
 
 void single_thread_pi()
