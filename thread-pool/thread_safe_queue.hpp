@@ -24,12 +24,17 @@ public:
         m_cvQueueNotEmpty.notify_one();
     }
 
+    void push(T&& item)
+    {
+        {
+            std::lock_guard lg{m_queueMutex};
+            m_queue.push(std::move(item));
+        }
+        m_cvQueueNotEmpty.notify_one();
+    }
+
     void push(const std::vector<T>& items)
     {
-        // for (const auto item : items)
-        // {
-        //     push(item);
-        // }
         {
             std::lock_guard lk{m_queueMutex};
             for (const auto& item : items)
@@ -49,7 +54,7 @@ public:
         // }
         m_cvQueueNotEmpty.wait(ul, [this] { return !m_queue.empty(); });
 
-        item = m_queue.front();
+        item = std::move(m_queue.front());
         m_queue.pop();
     }
 
@@ -60,7 +65,7 @@ public:
         if (!lk.owns_lock() || m_queue.empty())
             return false;
 
-        item = m_queue.front();
+        item = std::move(m_queue.front());
         m_queue.pop();
 
         return true;
