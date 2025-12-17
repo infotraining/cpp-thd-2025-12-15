@@ -6,6 +6,7 @@
 #include <numeric>
 #include <random>
 #include <thread>
+#include <future>
 
 using namespace std;
 
@@ -50,19 +51,30 @@ void calculate_hits_with_mutex(uintmax_t N, uintmax_t& hits, std::mutex& hits_mu
     std::mt19937_64 rnd_gen{seed};
     std::uniform_real_distribution<double> rnd_distr{0.0, 1.0};
 
-    uintmax_t local_counter = 0;
+    // uintmax_t local_counter = 0;
+    // for (uintmax_t n = 0; n < N; ++n)
+    // {
+    //     double x = rnd_distr(rnd_gen);
+    //     double y = rnd_distr(rnd_gen);
+    //     if (x * x + y * y <= 1)
+    //     {
+    //         ++local_counter;
+    //     }            
+    // }
+
+    // std::lock_guard lk{hits_mutex};
+    // hits += local_counter;
+
     for (uintmax_t n = 0; n < N; ++n)
     {
         double x = rnd_distr(rnd_gen);
         double y = rnd_distr(rnd_gen);
         if (x * x + y * y <= 1)
         {
-            ++local_counter;
+            std::lock_guard lk{hits_mutex};
+            ++hits;
         }            
     }
-
-    std::lock_guard lk{hits_mutex};
-    hits += local_counter;
 }
 
 void calculate_hits_atomic(uintmax_t N, std::atomic<uintmax_t>& hits)
@@ -77,11 +89,14 @@ void calculate_hits_atomic(uintmax_t N, std::atomic<uintmax_t>& hits)
         double x = rnd_distr(rnd_gen);
         double y = rnd_distr(rnd_gen);
         if (x * x + y * y <= 1)
-            ++local_counter;
+        {
+            //++local_counter;
+            hits.fetch_add(1, std::memory_order_relaxed);
+        }
     }
 
     // hits += local_counter; 
-    hits.fetch_add(local_counter, std::memory_order_relaxed);
+    //hits.fetch_add(local_counter, std::memory_order_relaxed);
 }
 
 void single_thread_pi()
@@ -279,6 +294,78 @@ void multi_thread_pi_with_atomic()
     cout << "Elapsed (" << threads_count << " threads - atomic) = " << elapsed_time << "ms" << endl;
 }
 
+uintmax_t calculate_hits(uintmax_t N)
+{
+    const size_t seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen{seed};
+    std::uniform_real_distribution<double> rnd_distr{0.0, 1.0};
+
+    uintmax_t hits{};
+    for (uintmax_t n = 0; n < N; ++n)
+    {
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
+        if (x * x + y * y <= 1)
+            ++hits; // hot-loop
+    }
+    return hits;
+}
+
+uintmax_t calculate_hits_future(uintmax_t N)
+{
+    const size_t seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen{seed};
+    std::uniform_real_distribution<double> rnd_distr{0.0, 1.0};
+
+    uintmax_t hits{};
+    for (uintmax_t n = 0; n < N; ++n)
+    {
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
+        if (x * x + y * y <= 1)
+            ++hits; // hot-loop
+    }
+    return hits;
+}
+
+void multi_thread_pi_with_futures()
+{
+    const auto threads_count{std::max(std::thread::hardware_concurrency(), 1u)};
+    const uintmax_t n_per_thread = N / threads_count;
+
+    std::cout << "Pi (multi thread - futures)! Number of threads: " << threads_count << std::endl;
+    const auto start = chrono::high_resolution_clock::now();
+
+    std::vector<std::future<uintmax_t>> futures(threads_count);
+
+    for (uint32_t i{0}; i < threads_count; i++)
+    {
+        // futures[i] = std::async(std::launch::async, static_cast<uintmax_t(*)(uintmax_t)>(&calculate_hits), n_per_thread);
+        futures[i] = std::async(std::launch::async, [n_per_thread] { return calculate_hits(n_per_thread); });
+    }
+
+    // for (uint32_t i{0}; i < threads_count; i++)
+    // {
+    //     try
+    //     {
+    //         sum_of_hits += futures[i].get();
+    //     }
+    //     catch (const std::exception& ex)
+    //     {
+    //         std::cout << "Exception from thread " << i << ": " << ex.what() << std::endl;
+    //     }
+    // }
+    uintmax_t sum_of_hits = std::accumulate(futures.begin(), futures.end(), uintmax_t{}, [](uintmax_t sum, auto& f) { return sum + f.get(); });
+
+    const double pi = static_cast<double>(sum_of_hits) / N * 4;
+
+    const auto end = chrono::high_resolution_clock::now();
+    const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    cout << "Pi = " << pi << endl;
+    cout << "Elapsed (" << threads_count << " threads - futures) = " << elapsed_time << "ms" << endl;
+}
+
 int main()
 {
     const uintmax_t N = 100'000'000;
@@ -309,4 +396,9 @@ int main()
               << std::endl;
 
     multi_thread_pi_with_atomic();
+
+    std::cout << "\n----------\n"
+              << std::endl;
+    
+    multi_thread_pi_with_futures();
 }
