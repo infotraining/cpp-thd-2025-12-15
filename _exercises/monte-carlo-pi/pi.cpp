@@ -343,18 +343,6 @@ void multi_thread_pi_with_futures()
         // futures[i] = std::async(std::launch::async, static_cast<uintmax_t(*)(uintmax_t)>(&calculate_hits), n_per_thread);
         futures[i] = std::async(std::launch::async, [n_per_thread] { return calculate_hits(n_per_thread); });
     }
-
-    // for (uint32_t i{0}; i < threads_count; i++)
-    // {
-    //     try
-    //     {
-    //         sum_of_hits += futures[i].get();
-    //     }
-    //     catch (const std::exception& ex)
-    //     {
-    //         std::cout << "Exception from thread " << i << ": " << ex.what() << std::endl;
-    //     }
-    // }
     uintmax_t sum_of_hits = std::accumulate(futures.begin(), futures.end(), uintmax_t{}, [](uintmax_t sum, auto& f) { return sum + f.get(); });
 
     const double pi = static_cast<double>(sum_of_hits) / N * 4;
